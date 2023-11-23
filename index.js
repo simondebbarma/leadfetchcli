@@ -9,22 +9,36 @@ const googleMapsClient = require('@google/maps').createClient({
 });
 const ExcelJS = require('exceljs');
 
-function searchPlaces(keyword, location) {
-    return googleMapsClient.places({
-      query: `${keyword} in ${location}`,
-      language: 'en',
-    })
-    .asPromise()
-    .then(response => {
+async function searchPlaces(keyword, location) {
+    let allPlaces = [];
+    let nextPageToken = null;
+    let requestCount = 0;
+  
+    do {
+      const response = await googleMapsClient.places({
+        query: `${keyword} in ${location}`,
+        language: 'en',
+        pagetoken: nextPageToken,
+      }).asPromise();
+  
       const places = response.json.results;
-      return Promise.all(places.map(place => {
-        return getPlaceDetails(place.place_id)
-          .then(details => {
-            return {...place, ...details};
-          });
-      }));
-    })
-    .catch(err => console.log(err));
+      allPlaces = allPlaces.concat(places);
+  
+      nextPageToken = response.json.next_page_token;
+  
+      if (nextPageToken) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+  
+      requestCount++;
+    } while (nextPageToken && requestCount < 3);
+  
+    return Promise.all(allPlaces.map(place => {
+      return getPlaceDetails(place.place_id)
+        .then(details => {
+          return {...place, ...details};
+        });
+    }));
   }
 
 function getPlaceDetails(placeId) {
@@ -51,14 +65,14 @@ program
     searchPlaces(keyword, location)
       .then(places => {
         worksheet.columns = [
-            { header: 'Name', key: 'name', width: 25 },  
-            { header: 'Business Status', key: 'business_status', width: 25 },
-            { header: 'Website', key: 'website', width: 25},
-            { header: 'Phone Number', key: 'formatted_phone_number', width: 25},
-            { header: 'Address', key: 'formatted_address', width: 25 },
-            { header: 'Rating', key: 'rating', width: 25 },
+            { header: 'Name', key: 'name', width: 30 },  
+            { header: 'Business Status', key: 'business_status', width: 15 },
+            { header: 'User Ratings Total', key: 'user_ratings_total', width: 12},
+            { header: 'Rating', key: 'rating', width: 7 },
+            { header: 'Website', key: 'website', width: 50},
+            { header: 'Phone Number', key: 'formatted_phone_number', width: 15},
+            { header: 'Address', key: 'formatted_address', width: 50 },
             { header: 'Types', key: 'types', width: 25 },
-            { header: 'User Ratings Total', key: 'user_ratings_total', width: 25},
         ];
         worksheet.addRows(places);
         return workbook.xlsx.writeFile('./results/' +keyword + location + '.xlsx');
