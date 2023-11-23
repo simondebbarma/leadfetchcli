@@ -10,17 +10,33 @@ const googleMapsClient = require('@google/maps').createClient({
 const ExcelJS = require('exceljs');
 
 function searchPlaces(keyword, location) {
-  return googleMapsClient.places({
-    query: `${keyword} in ${location}`,
-    language: 'en',
-  })
-  .asPromise()
-  .then(response => {
-    console.log(response.json.results);
-    return response.json.results;
+    return googleMapsClient.places({
+      query: `${keyword} in ${location}`,
+      language: 'en',
     })
-  .catch(err => console.log(err));
+    .asPromise()
+    .then(response => {
+      const places = response.json.results;
+      return Promise.all(places.map(place => {
+        return getPlaceDetails(place.place_id)
+          .then(details => {
+            return {...place, ...details};
+          });
+      }));
+    })
+    .catch(err => console.log(err));
+  }
+
+function getPlaceDetails(placeId) {
+    return googleMapsClient.place({
+      placeid: placeId,
+      fields: ['formatted_phone_number', 'website'],
+    })
+    .asPromise()
+    .then(response => response.json.result)
+    .catch(err => console.log(err));
 }
+   
 
 program
   .version('1.0.0')
@@ -29,31 +45,24 @@ program
   .option('-l, --location <location>', 'Location to search in')
   .action((options) => {
     const { keyword, location } = options;
+    let workbook = new ExcelJS.Workbook();
+    let worksheet = workbook.addWorksheet('Google Maps Data');
 
     searchPlaces(keyword, location)
       .then(places => {
-        let workbook = new ExcelJS.Workbook();
-        let worksheet = workbook.addWorksheet('Google Maps Data');
-
         worksheet.columns = [
             { header: 'Name', key: 'name', width: 25 },  
             { header: 'Business Status', key: 'business_status', width: 25 },
-            { header: 'Formatted Address', key: 'formatted_address', width: 25 },
+            { header: 'Website', key: 'website', width: 25},
+            { header: 'Phone Number', key: 'formatted_phone_number', width: 25},
+            { header: 'Address', key: 'formatted_address', width: 25 },
             { header: 'Rating', key: 'rating', width: 25 },
-            { header: 'Place ID', key: 'place_id', width: 25 },
-            { header: 'Opening Hours', key: 'opening_hours', width: 25 },
-            { header: 'Reference', key: 'reference', width: 25 },
             { header: 'Types', key: 'types', width: 25 },
             { header: 'User Ratings Total', key: 'user_ratings_total', width: 25},
-            { header: 'Latitude', key: 'geometry.location.lat', width: 25 },
-            { header: 'Longitude', key: 'geometry.location.lng', width: 25 },
-            { header: 'Types', key: 'types', width: 25},
         ];
-
         worksheet.addRows(places);
-
         return workbook.xlsx.writeFile('./results/' +keyword + location + '.xlsx');
-      })
+    })
       .then(() => console.log('File written successfully.'))
       .catch(err => console.error(err));
   });
